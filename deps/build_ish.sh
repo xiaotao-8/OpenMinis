@@ -134,12 +134,11 @@ init_submodules() {
 
     cd "$ISH_DIR"
 
-    if [ ! -d "deps/libapps/.git" ] && [ ! -f "deps/libapps/.git" ]; then
-        git submodule update --init --recursive
-        log_success "Submodules initialized"
-    else
-        log_info "Submodules already initialized"
-    fi
+    # 每次都跑：只看 libapps 在不在会漏掉半初始化状态（libapps 有了、
+    # linux 还没拉到），那时 meson configure 会在后面莫名其妙地失败。
+    # git submodule update --init --recursive 已是最新时是空操作。
+    git submodule update --init --recursive
+    log_success "Submodules initialized"
 
     cd "$SCRIPT_DIR"
 }
@@ -441,6 +440,35 @@ EOF
 }
 
 # ============================================================================
+# Verify Outputs
+# ============================================================================
+# 产物验收：umbrella 头、fs/devices.h、各平台的三个 .a 和 libish_aot.a
+# 必须真实存在。缺一个就直接失败，别让 xcodebuild 在后面报
+# ish.h 不存在这种误导性错误。
+verify_outputs() {
+    log_info "Verifying build outputs..."
+    local f
+    for f in "$OUTPUT_INCLUDE/ish/ish.h" "$OUTPUT_INCLUDE/ish/fs/devices.h"; do
+        if [ ! -f "$f" ]; then
+            log_error "Missing header (not generated): $f"
+        fi
+    done
+    local platform libdir lib
+    for platform in $PLATFORMS; do
+        libdir="$OUTPUT_LIBS"
+        if [ "$platform" == "iphonesimulator" ]; then
+            libdir="$OUTPUT_LIBS/iphonesimulator"
+        fi
+        for lib in libish.a libish_emu.a libfakefs.a libish_aot.a; do
+            if [ ! -f "$libdir/$lib" ]; then
+                log_error "Missing library (not built): $libdir/$lib"
+            fi
+        done
+    done
+    log_success "All build outputs present"
+}
+
+# ============================================================================
 # Print Summary
 # ============================================================================
 print_summary() {
@@ -511,6 +539,7 @@ main() {
         IOS_DEPLOYMENT_TARGET="$IOS_DEPLOYMENT_TARGET" PLATFORM="$PLATFORM" \
             bash "$SCRIPT_DIR/build_aot.sh"
     done
+    verify_outputs
     print_summary
 }
 

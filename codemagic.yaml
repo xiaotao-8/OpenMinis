@@ -27,11 +27,23 @@ workflows:
           xcodebuild -downloadComponent MetalToolchain || echo "Metal toolchain unavailable, continuing (FFmpeg drops one filter)"
       - name: 原生依赖（模拟器版，顺序不能换）
         script: |
+          set -euo pipefail
           ./deps/build_lame.sh --simulator
           ./deps/build_ffmpeg.sh --simulator
           ./deps/build_ish.sh --simulator
           ./deps/prepare_alpine_rootfs.sh
           ./deps/build_rclone_ios.sh
+          # 依赖产物验收：任一缺失都直接失败，别等 xcodebuild 报
+          # ish.h 不存在这种误导性错误。头文件是 build_ish.sh 真生成的
+          # （umbrella + 从 ish 源码拷过来的），不是桩。
+          for f in deps/include/ish/ish.h deps/include/ish/fs/devices.h \
+                   deps/libs/iphonesimulator/libish.a deps/libs/iphonesimulator/libish_emu.a \
+                   deps/libs/iphonesimulator/libfakefs.a deps/libs/iphonesimulator/libish_aot.a; do
+            test -f "$f" || { echo "FATAL: missing $f (build_ish.sh should have produced it)"; exit 1; }
+          done
+          test -d deps/frameworks/FFmpeg.framework || { echo "FATAL: missing deps/frameworks/FFmpeg.framework (build_ffmpeg.sh)"; exit 1; }
+          test -d deps/frameworks/Rclone.xcframework || { echo "FATAL: missing deps/frameworks/Rclone.xcframework (build_rclone_ios.sh)"; exit 1; }
+          echo "dep outputs OK"
       - name: 模拟器构建并截图
         script: |
           set -e
