@@ -30,7 +30,15 @@ workflows:
           set -euo pipefail
           ./deps/build_lame.sh --simulator
           ./deps/build_ffmpeg.sh --simulator
-          ./deps/build_ish.sh --simulator
+          # ish 内核 vdso 用 -fuse-ld=lld：裸 clang 必须解析到 brew llvm 的
+          # clang + ld.lld（Xcode 自带 clang 不认识 lld，构建 #3 报错于此）。
+          # 只给这一步加 PATH，不影响其它依赖的工具链。
+          LLVM_BIN=""
+          for d in /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin; do
+            if [ -x "$d/ld.lld" ]; then LLVM_BIN="$d"; break; fi
+          done
+          test -n "$LLVM_BIN" || { echo "FATAL: ld.lld not found (brew install llvm)"; exit 1; }
+          PATH="$LLVM_BIN:$PATH" ./deps/build_ish.sh --simulator
           ./deps/prepare_alpine_rootfs.sh
           ./deps/build_rclone_ios.sh
           # 依赖产物验收：任一缺失都直接失败，别等 xcodebuild 报
