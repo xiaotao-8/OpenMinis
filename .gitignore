@@ -87,7 +87,8 @@ deps/alpine/
 # iSH build outputs
 deps/libs/
 deps/include/
-deps/resources/
+deps/resources/*
+!deps/resources/RootfsPatch.bundle
 deps/ish/build-ios/
 deps/ish/build-native/
 deps/.cache/
