@@ -1,0 +1,67 @@
+# Minis 参考构建（Codemagic，iOS 模拟器截图用）
+#
+# 只为在模拟器里跑起真 Minis、截几张对照图：不签名、不出包、不改源码。
+# 流程照 BUILDING.md：子模块 → xcconfig 模板 → 工具链 → 原生依赖
+# （--simulator）→ 模拟器构建 → 安装启动截图。
+# 首次构建约 30–60 分钟（FFmpeg / iSH 从源码编），Codemagic 免费档
+# 每月 500 分钟，注意用量。不自动触发，手动跑。
+
+workflows:
+  ios-sim-reference:
+    name: Minis iOS simulator reference
+    instance_type: mac_mini_m1
+    max_build_duration: 120
+    environment:
+      xcode: latest
+    scripts:
+      - name: 子模块（iSH / PRoot）
+        script: git submodule update --init --recursive
+      - name: 构建期配置模板
+        script: |
+          cp src/ios/Configs/ProviderCustomization.xcconfig.example \
+             src/ios/Configs/ProviderCustomization.xcconfig
+      - name: 工具链
+        script: |
+          brew install meson ninja llvm libarchive pkg-config
+          command -v go >/dev/null || brew install go
+          xcodebuild -downloadComponent MetalToolchain || echo "Metal toolchain unavailable, continuing (FFmpeg drops one filter)"
+      - name: 原生依赖（模拟器版，顺序不能换）
+        script: |
+          ./deps/build_lame.sh --simulator
+          ./deps/build_ffmpeg.sh --simulator
+          ./deps/build_ish.sh --simulator
+          ./deps/prepare_alpine_rootfs.sh
+          ./deps/build_rclone_ios.sh
+      - name: 模拟器构建并截图
+        script: |
+          set -e
+          SIM_UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          for rt,devs in d['devices'].items():
+              if 'iOS' not in rt: continue
+              for dev in devs:
+                  if 'iPhone' in dev['name'] and dev.get('isAvailable', True):
+                      print(dev['udid']); raise SystemExit
+          ")
+          echo "SIM=$SIM_UDID"
+          xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          xcodebuild -project src/ios/Minis.xcodeproj -scheme Minis \
+            -destination "id=$SIM_UDID" -derivedDataPath build-sim CODE_SIGNING_ALLOWED=NO build
+          APP=$(find build-sim/Build/Products -name "Minis.app" -maxdepth 3 | head -1)
+          xcrun simctl install "$SIM_UDID" "$APP"
+          xcrun simctl launch "$SIM_UDID" com.openminis.app
+          sleep 15
+          xcrun simctl io "$SIM_UDID" screenshot minis-home.png
+          xcrun simctl terminate "$SIM_UDID" com.openminis.app || true
+          # 尽力一试：--uitest-message-list 是 MessageListTestView 的启动参数，
+          # 但源码里没有任何启动路由指向它（只能从 Debug 菜单点进去），
+          # 这张大概率和上一张一样，只作备查。
+          xcrun simctl launch "$SIM_UDID" com.openminis.app -- --uitest-message-list
+          sleep 5
+          xcrun simctl io "$SIM_UDID" screenshot minis-message-list.png
+          ls -lh minis-home.png minis-message-list.png
+    artifacts:
+      - minis-home.png
+      - minis-message-list.png
