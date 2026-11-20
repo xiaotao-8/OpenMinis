@@ -57,7 +57,11 @@ workflows:
                    deps/libs/iphonesimulator/libfakefs.a deps/libs/iphonesimulator/libish_aot.a; do
             test -f "$f" || { echo "FATAL: missing $f (build_ish.sh should have produced it)"; exit 1; }
           done
-          test -d deps/frameworks/FFmpeg.framework || { echo "FATAL: missing deps/frameworks/FFmpeg.framework (build_ffmpeg.sh)"; exit 1; }
+          # 模拟器版：umbrella 在 frameworks/iphonesimulator/ 下，Xcode 链的是
+          # frameworks/*.xcframework（build_ffmpeg.sh 的 make_xcframeworks 注释）。
+          # deps/frameworks/FFmpeg.framework 只在设备版才存在，别查它。
+          test -d deps/frameworks/iphonesimulator/FFmpeg.framework || { echo "FATAL: missing deps/frameworks/iphonesimulator/FFmpeg.framework (build_ffmpeg.sh)"; exit 1; }
+          test -d deps/frameworks/FFmpeg.xcframework || { echo "FATAL: missing deps/frameworks/FFmpeg.xcframework (build_ffmpeg.sh)"; exit 1; }
           test -d deps/frameworks/Rclone.xcframework || { echo "FATAL: missing deps/frameworks/Rclone.xcframework (build_rclone_ios.sh)"; exit 1; }
           echo "dep outputs OK"
       - name: 模拟器构建并截图
